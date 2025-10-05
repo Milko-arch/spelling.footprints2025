@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Spelling Bee Footprints</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts: Poppins, Great Vibes & Merriweather for Certificate -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&family=Great+Vibes&family=Merriweather:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+    
+    <!-- JS Libraries from CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+    
+    <!-- Babel Standalone for in-browser transpilation -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Import Map for ES Modules -->
+    <script type="importmap">
+    {
+        "imports": {
+            "react": "https://esm.sh/react@18.2.0",
+            "react-dom/client": "https://esm.sh/react-dom@18.2.0/client"
+        }
+    }
+    </script>
+    
+    <style>
+        body {
+            font-family: 'Poppins', sans-serif;
+            background-color: #0F172A; /* Dark Slate Blue */
+            color: #E2E8F0; /* Light Slate */
+            background-image: linear-gradient(rgba(15, 23, 42, 0.95), rgba(15, 23, 42, 0.95)), 
+                              radial-gradient(circle at top left, rgba(6, 182, 212, 0.1), transparent 30%),
+                              radial-gradient(circle at bottom right, rgba(217, 70, 239, 0.1), transparent 30%);
+            background-size: cover;
+        }
+
+        /* Custom glow effects */
+        .glow-cyan {
+            box-shadow: 0 0 5px rgba(6, 182, 212, 0.5), 0 0 10px rgba(6, 182, 212, 0.3);
+        }
+        
+        /* Animations */
+        @keyframes fade-in { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fade-in { animation: fade-in 0.5s ease-out forwards; }
+        
+        @keyframes fade-in-down { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fade-in-down { animation: fade-in-down 0.3s ease-out forwards; }
+        
+        @keyframes shake {
+            10%, 90% { transform: translate3d(-1px, 0, 0); } 20%, 80% { transform: translate3d(2px, 0, 0); }
+            30%, 50%, 70% { transform: translate3d(-4px, 0, 0); } 40%, 60% { transform: translate3d(4px, 0, 0); }
+        }
+        .animate-shake { animation: shake 0.82s cubic-bezier(.36,.07,.19,.97) both; }
+        
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 10px #06b6d4, 0 0 20px #06b6d4; }
+            50% { box-shadow: 0 0 20px #06b6d4, 0 0 40px #06b6d4; }
+        }
+        .animate-pulse-glow { animation: pulse-glow 2s infinite ease-in-out; }
+        
+        .certificate-font {
+            font-family: 'Merriweather', serif;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, useCallback, useRef } from 'react';
+        import { createRoot } from 'react-dom/client';
+
+        // --- Content from services/audioService.ts ---
+        const audioService = (() => {
+            let applauseAudio = null;
+            return {
+                playApplause: () => {
+                    if (!applauseAudio) {
+                        applauseAudio = new Audio('https://www.soundjay.com/human/sounds/applause-2.mp3');
+                        applauseAudio.volume = 0.7;
+                    }
+                    if (applauseAudio) {
+                      applauseAudio.currentTime = 0;
+                      applauseAudio.play().catch(error => {
+                          console.error("Error playing applause sound:", error);
+                      });
+                    }
+                }
+            };
+        })();
+
+        // --- Content from services/excelService.ts ---
+        const excelService = {
+            parseExcel: (file) => {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        try {
+                            const data = new Uint8Array(event.target.result);
+                            const workbook = XLSX.read(data, { type: 'array' });
+                            const firstSheetName = workbook.SheetNames[0];
+                            const worksheet = workbook.Sheets[firstSheetName];
+                            const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                            const words = jsonData
+                                .map(row => row[0])
+                                .filter(cell => cell && typeof cell === 'string' && cell.trim().length > 0)
+                                .map(cell => cell.trim());
+                            resolve(words);
+                        } catch (err) { reject(err); }
+                    };
+                    reader.onerror = (error) => reject(error);
+                    reader.readAsArrayBuffer(file);
+                });
+            }
+        };
+
+        // --- Content from SpellingBee.tsx ---
+        const SpellingBee = ({ word, studentName, onSuccess, onClose, addToast }) => {
+            const [inputs, setInputs] = useState(Array(word.text.length).fill(''));
+            const [isListening, setIsListening] = useState(false);
+            const [feedback, setFeedback] = useState(null);
+            const [shake, setShake] = useState(false);
+            const [micStatus, setMicStatus] = useState('loading');
+            const [micError, setMicError] = useState(null);
+            const [isWordVisible, setIsWordVisible] = useState(false);
+            const inputRefs = useRef([]);
+            const speechRecognition = useRef(null);
+            const hasAttempted = useRef(false);
+
+            const speak = useCallback((text) => {
+                window.speechSynthesis.cancel();
+                const utterance = new SpeechSynthesisUtterance(text);
+                const voices = window.speechSynthesis.getVoices().filter(v => v.lang.startsWith('en-'));
+                if (voices.length > 0) {
+                    const googleUSEnglish = voices.find(v => v.name === 'Google US English');
+                    const googleVoice = voices.find(v => v.name.includes('Google'));
+                    const defaultBrowserVoice = voices.find(v => v.default);
+                    const finalVoice = googleUSEnglish || googleVoice || defaultBrowserVoice || voices[0];
+                    if (finalVoice) utterance.voice = finalVoice;
+                }
+                utterance.rate = 0.8;
+                utterance.pitch = 1;
+                window.speechSynthesis.speak(utterance);
+            }, []);
+
+            useEffect(() => {
+                speak(word.text);
+            }, [word, speak]);
+
+            useEffect(() => {
+                if (!window.isSecureContext) { setMicStatus('insecure'); return; }
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                if (SpeechRecognition) {
+                    speechRecognition.current = new SpeechRecognition();
+                    speechRecognition.current.continuous = false;
+                    speechRecognition.current.lang = 'en-US';
+                    speechRecognition.current.interimResults = false;
+                    speechRecognition.current.onstart = () => setIsListening(true);
+                    speechRecognition.current.onend = () => setIsListening(false);
+                    speechRecognition.current.onerror = (event) => { 
+                        console.error('Speech recognition error:', event.error);
+                        let errorMessage = `Microphone error: ${event.error}`;
+                        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+                            setMicStatus('denied');
+                            errorMessage = "Microphone access was denied.";
+                        } else if (event.error === 'no-speech') {
+                            const noSpeechError = "No speech was detected. Please try again.";
+                            setMicError(noSpeechError);
+                            setTimeout(() => setMicError(null), 3000);
+                            errorMessage = noSpeechError;
+                        } else if (event.error === 'audio-capture') {
+                             errorMessage = "Microphone is not available or is being used by another app.";
+                        }
+                        addToast(errorMessage, 'error');
+                        setIsListening(false); 
+                    };
+                    speechRecognition.current.onresult = (event) => { 
+                        const transcript = event.results[0][0].transcript; 
+                        checkWord(transcript.replace(/\s+/g, '').toUpperCase()); 
+                    };
+                    setMicStatus('ready');
+                } else {
+                    setMicStatus('unsupported');
+                }
+            }, [addToast]);
+
+            const checkWord = (attempt) => {
+                if (attempt.toUpperCase() === word.text.toUpperCase()) {
+                    const successMessage = `Good job, ${studentName}!`;
+                    setFeedback({ message: successMessage, type: 'success' });
+                    speak(successMessage);
+                    audioService.playApplause();
+                    setTimeout(() => onSuccess(!hasAttempted.current), 2500);
+                } else {
+                    const errorMessage = "Not quite! Try again.";
+                    setFeedback({ message: errorMessage, type: 'error' });
+                    hasAttempted.current = true;
+                    setShake(true);
+                    speak(errorMessage);
+                    setTimeout(() => { setShake(false); setFeedback(null); }, 1500);
+                }
+            };
+            
+            const handleInputChange = (e, index) => {
+                const newInputs = [...inputs];
+                newInputs[index] = e.target.value.toUpperCase();
+                setInputs(newInputs);
+                if (e.target.value && index < word.text.length - 1) { inputRefs.current[index + 1]?.focus(); }
+                if (newInputs.join('').length === word.text.length) { checkWord(newInputs.join('')); }
+            };
+            
+            const handlePaste = (e) => {
+                e.preventDefault();
+                const pastedText = e.clipboardData.getData('text').toUpperCase();
+                const newInputs = Array(word.text.length).fill('');
+                for(let i = 0; i < word.text.length; i++) { newInputs[i] = pastedText[i] || ''; }
+                setInputs(newInputs);
+                if (newInputs.join('').length === word.text.length) { checkWord(newInputs.join('')); }
+            };
+
+            const toggleListen = () => {
+                if (!speechRecognition.current || micStatus !== 'ready') return;
+                try {
+                    if (isListening) { speechRecognition.current.stop(); } 
+                    else { speechRecognition.current.start(); }
+                } catch(e) {
+                    console.error("Error starting speech recognition:", e);
+                    addToast("Could not start microphone. Please check permissions.", "error");
+                }
+            };
+            
+            const MicStatusMessage = () => {
+                switch(micStatus) {
+                    case 'unsupported': return <p className="text-sm text-red-500 mt-2">Voice input is not supported on this browser.</p>;
+                    case 'insecure': return <p className="text-sm text-red-500 mt-2">Microphone requires a secure (HTTPS) connection.</p>;
+                    case 'denied': return <p className="text-sm text-red-500 mt-2">Microphone access denied. Check site settings.</p>;
+                    case 'loading': return <p className="text-sm text-slate-400 mt-2">Initializing microphone...</p>;
+                    default: return null;
+                }
+            };
+
+            return (
+                <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+                    <div className={`bg-slate-800/70 border border-slate-700 rounded-2xl p-8 w-full max-w-2xl text-center transform transition-transform ${shake ? 'animate-shake' : ''}`}>
+                        <h2 className="text-3xl font-bold mb-2 text-slate-200">Spell the word:</h2>
+                        <div className="flex items-center justify-center gap-4 mb-8">
+                             <p className={`text-5xl font-extrabold text-cyan-400 break-all transition-all duration-300 ${!isWordVisible ? 'blur-lg select-none' : ''}`}>{word.text}</p>
+                            <div className="flex flex-col gap-2">
+                                <button onClick={() => setIsWordVisible(v => !v)} title={isWordVisible ? "Hide Word" : "Show Word"} className="p-2 rounded-full bg-slate-700 hover:bg-slate-600 transition">
+                                    {isWordVisible ? (
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a9.97 9.97 0 01-1.563 3.029m0 0l-2.117 2.116" />
+                                        </svg>
+                                    ) : (
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                          <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                          <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                        </svg>
+                                    )}
+                                </button>
+                                <button onClick={() => speak(word.text)} className="p-2 rounded-full bg-slate-700 hover:bg-slate-600 transition">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-cyan-400" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fillRule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM14.657 2.929a1 1 0 011.414 0A9 9 0 0119 12a9 9 0 01-2.929 7.071 1 1 0 01-1.414-1.414A7 7 0 0017 12a7 7 0 00-2.343-5.657 1 1 0 010-1.414zm-2.829 2.828a1 1 0 011.415 0A5 5 0 0115 12a5 5 0 01-1.757 3.536 1 1 0 01-1.415-1.415A3 3 0 0013 12a3 3 0 00-1.172-2.424 1 1 0 010-1.415z" clipRule="evenodd" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div className="flex justify-center gap-2 mb-8 flex-wrap" onPaste={handlePaste}>
+                            {inputs.map((val, i) => (
+                                <input key={i} ref={el => inputRefs.current[i] = el} type="text" maxLength={1} value={val}
+                                    onChange={(e) => handleInputChange(e, i)}
+                                    className="w-12 h-16 sm:w-16 sm:h-20 text-4xl text-center font-bold bg-slate-700 border-2 border-slate-600 text-slate-100 rounded-lg focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400 focus:outline-none"/>
+                            ))}
+                        </div>
+                        <div className="mb-6">
+                            <button onClick={toggleListen} disabled={micStatus !== 'ready'}
+                                className={`relative w-24 h-24 rounded-full transition ${isListening ? 'bg-red-500' : 'bg-cyan-500'} disabled:bg-slate-600 disabled:cursor-not-allowed`}>
+                                {isListening && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>}
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-white m-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
+                            </button>
+                            <MicStatusMessage />
+                            {micError && <p className="text-sm text-yellow-500 mt-2">{micError}</p>}
+                        </div>
+                        {feedback && (<p className={`text-2xl font-bold ${feedback.type === 'success' ? 'text-green-400' : 'text-red-400'}`}>{feedback.message}</p>)}
+                        <div className="mt-8">
+                            <button onClick={() => onClose(false)} className="px-6 py-2 bg-slate-600 text-slate-200 font-semibold rounded-lg hover:bg-slate-500">Skip Word</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const Certificate = React.forwardRef(({ student, date }, ref) => {
+            const score = student.attempts > 0 ? ((student.correct / student.attempts) * 100).toFixed(0) : 0;
+            return (
+                 <div ref={ref} className="w-[1100px] h-[850px] p-8 bg-[#fbfaf6] text-slate-800 flex flex-col items-center justify-center relative certificate-font overflow-hidden">
+                    <div className="absolute inset-4 border-2 border-amber-600"></div>
+                    <div className="absolute inset-6 border-4 border-blue-900"></div>
+                    <div className="absolute inset-8 border-1 border-amber-600"></div>
+                    <div className="relative text-center w-full flex-grow flex flex-col justify-between py-8">
+                        <div>
+                            <p className="text-2xl text-amber-700" style={{fontFamily: "'Merriweather', serif"}}>Certificate of Excellence</p>
+                            <h1 className="text-7xl font-bold text-blue-900 mt-2 tracking-wide" style={{fontFamily: "'Poppins', sans-serif"}}>Footprints Spelling 2025</h1>
+                            <div className="w-64 h-0.5 bg-amber-500 mx-auto mt-6"></div>
+                        </div>
+                        <div>
+                            <p className="text-xl text-slate-600 mb-4" style={{fontFamily: "'Merriweather', serif"}}>This certificate is proudly awarded to</p>
+                            <h2 className="text-8xl font-normal text-blue-900" style={{fontFamily: "'Great Vibes', cursive"}}>{student.name}</h2>
+                            <p className="text-lg mt-8 max-w-2xl mx-auto text-slate-600" style={{fontFamily: "'Merriweather', serif"}}>For demonstrating exceptional skill and dedication in the Spelling Bee competition, achieving an outstanding score of:</p>
+                            <p className="text-7xl font-bold text-amber-700 my-4">{score}%</p>
+                        </div>
+                        <div className="w-full flex justify-between items-end px-16">
+                            <div className="text-center">
+                                <p className="text-2xl italic text-slate-700 px-4 mb-2" style={{fontFamily: "'Great Vibes', cursive"}}>Mgr. Consuelo Gamboa O.</p>
+                                <p className="text-md border-t-2 border-slate-500 pt-1 font-bold text-blue-900" style={{fontFamily: "'Merriweather', serif"}}>Principal</p>
+                            </div>
+                            <div className="w-32 h-32">
+                                <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                                    <circle cx="50" cy="50" r="48" fill="#0c2f5a" />
+                                    <circle cx="50" cy="50" r="43" fill="#d4af37" />
+                                    <circle cx="50" cy="50" r="38" fill="#0c2f5a" />
+                                    <path d="M50 25 L58.6 44.2 L80.9 44.2 L63.6 57.6 L72.2 76.8 L50 63.4 L27.8 76.8 L36.4 57.6 L19.1 44.2 L41.4 44.2 Z" fill="#d4af37" />
+                                </svg>
+                            </div>
+                            <div className="text-center">
+                               <p className="text-md border-t-2 border-slate-500 pt-1 font-bold text-blue-900" style={{fontFamily: "'Merriweather', serif"}}>{date}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        });
+
+        // --- Content from Roulette.tsx ---
+        const Roulette = ({ words: initialWords, studentName, background, onClose, addToast }) => {
+            const canvasRef = useRef(null);
+            const certificateRef = useRef(null);
+            const [spinning, setSpinning] = useState(false);
+            const [currentWord, setCurrentWord] = useState(null);
+            const [isSpellingBeeOpen, setIsSpellingBeeOpen] = useState(false);
+            const [rouletteWords, setRouletteWords] = useState([...initialWords.map(w => ({...w, text: w.text.toUpperCase()}))]);
+            const [student, setStudent] = useState({ name: studentName || 'Participant', attempts: 0, correct: 0 });
+            const spinSoundRef = useRef(null);
+            const [isNextSpinQueued, setIsNextSpinQueued] = useState(false);
+            const [studentForCert, setStudentForCert] = useState(null);
+
+            const speak = useCallback((text) => {
+                window.speechSynthesis.cancel();
+                const utterance = new SpeechSynthesisUtterance(text);
+                const voices = window.speechSynthesis.getVoices().filter(v => v.lang.startsWith('en-'));
+                if (voices.length > 0) {
+                    const googleUSEnglish = voices.find(v => v.name === 'Google US English');
+                    const googleVoice = voices.find(v => v.name.includes('Google'));
+                    const defaultBrowserVoice = voices.find(v => v.default);
+                    const finalVoice = googleUSEnglish || googleVoice || defaultBrowserVoice || voices[0];
+                    if (finalVoice) utterance.voice = finalVoice;
+                }
+                utterance.rate = 0.8;
+                utterance.pitch = 1;
+                window.speechSynthesis.speak(utterance);
+            }, []);
+
+            const drawRoulette = useCallback(() => {
+                const canvas = canvasRef.current;
+                if (!canvas || canvas.width === 0) return;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) return;
+                
+                const segments = rouletteWords;
+                const segmentAngle = segments.length > 0 ? (2 * Math.PI) / segments.length : 0;
+                const colors = ['#f87171', '#fb923c', '#facc15', '#4ade80', '#38bdf8', '#818cf8', '#c084fc'].map(c => c + 'dd');
+                
+                const { width, height } = canvas;
+                const centerX = width / 2;
+                const centerY = height / 2;
+                const radius = Math.min(width, height) * 0.48;
+
+                ctx.clearRect(0, 0, width, height);
+                if (segments.length === 0) return;
+                
+                ctx.font = `bold ${radius * 0.08}px Poppins, sans-serif`;
+                const baseRotation = -segmentAngle / 2;
+
+                segments.forEach((segment, i) => {
+                    ctx.beginPath();
+                    ctx.moveTo(centerX, centerY);
+                    ctx.arc(centerX, centerY, radius, baseRotation + i * segmentAngle, baseRotation + (i + 1) * segmentAngle);
+                    ctx.closePath();
+                    ctx.fillStyle = colors[i % colors.length];
+                    ctx.fill();
+                    ctx.save();
+                    ctx.fillStyle = '#ffffff';
+                    ctx.translate(centerX, centerY);
+                    ctx.rotate(baseRotation + i * segmentAngle + segmentAngle / 2);
+                    ctx.textAlign = 'right';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(segment.text, radius * 0.95, 0);
+                    ctx.restore();
+                });
+            }, [rouletteWords]);
+
+            const spin = useCallback(() => {
+                if (spinning || rouletteWords.length === 0) return;
+                setSpinning(true);
+                setStudent(s => ({ ...s, attempts: s.attempts + 1 }));
+                
+                const spinDuration = 8000;
+                const winningSegmentIndex = Math.floor(Math.random() * rouletteWords.length);
+                const winner = rouletteWords[winningSegmentIndex];
+
+                const segmentAngleDegrees = 360 / rouletteWords.length;
+                const winningAngle = winningSegmentIndex * segmentAngleDegrees;
+                const fullSpins = (Math.floor(Math.random() * 5) + 8) * 360;
+                const targetAngle = fullSpins - winningAngle;
+
+                const canvas = canvasRef.current;
+                if (canvas) {
+                    canvas.style.transition = `transform ${spinDuration}ms cubic-bezier(0.25, 0.1, 0.25, 1)`;
+                    canvas.style.transform = `rotate(${targetAngle}deg)`;
+                }
+
+                if (spinSoundRef.current) { spinSoundRef.current.currentTime = 0; spinSoundRef.current.play(); }
+
+                setTimeout(() => {
+                    if (canvas) {
+                        canvas.style.transition = 'none';
+                        const finalAngle = (targetAngle % 360 + 360) % 360;
+                        canvas.style.transform = `rotate(${finalAngle}deg)`;
+                    }
+                    setCurrentWord(winner);
+                    setIsSpellingBeeOpen(true);
+                    setSpinning(false);
+                    if (spinSoundRef.current) { spinSoundRef.current.pause(); }
+                }, spinDuration);
+            }, [spinning, rouletteWords]);
+            
+            useEffect(() => {
+                const canvas = canvasRef.current;
+                if (!canvas) return;
+                const resizeCanvas = () => {
+                    canvas.width = canvas.clientWidth;
+                    canvas.height = canvas.clientHeight;
+                    drawRoulette();
+                };
+                const observer = new ResizeObserver(resizeCanvas);
+                if(canvas.parentElement) observer.observe(canvas.parentElement);
+                resizeCanvas();
+                spinSoundRef.current = new Audio('https://bigsoundbank.com/UPLOAD/mp3/0038.mp3');
+                spinSoundRef.current.volume = 0.5;
+                return () => observer.disconnect();
+            }, [drawRoulette]);
+
+            useEffect(() => {
+                if (isNextSpinQueued) {
+                    const timer = setTimeout(() => {
+                        if (rouletteWords.length > 0) spin();
+                        setIsNextSpinQueued(false);
+                    }, 500);
+                    return () => clearTimeout(timer);
+                }
+            }, [isNextSpinQueued, spin, rouletteWords.length]);
+            
+            const handleSpellingComplete = (isCorrectFirstTry) => {
+                setIsSpellingBeeOpen(false);
+                if(isCorrectFirstTry) {
+                    setStudent(s => ({ ...s, correct: s.correct + 1 }));
+                }
+                if (currentWord) {
+                    const nextWords = rouletteWords.filter(w => w.text !== currentWord.text);
+                    setRouletteWords(nextWords);
+                    if (nextWords.length > 0) {
+                        setIsNextSpinQueued(true);
+                    }
+                }
+            };
+            
+            const handleDownloadCertificate = async (student) => {
+                setStudentForCert(student);
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                const { jsPDF } = window.jspdf;
+                const element = certificateRef.current;
+                if(element) {
+                    const canvas = await html2canvas(element, { scale: 2 });
+                    const imgData = canvas.toDataURL('image/png');
+                    const pdf = new jsPDF({ orientation: 'landscape', unit: 'px', format: [1100, 850] });
+                    pdf.addImage(imgData, 'PNG', 0, 0, 1100, 850);
+                    pdf.save(`Certificate-${student.name.replace(/ /g, '_')}.pdf`);
+                }
+                setStudentForCert(null);
+            };
+            
+            const isImageBg = typeof background === 'string' && background.startsWith('data:image');
+            const textColor = isImageBg ? 'text-white' : 'text-slate-100';
+
+            if (isSpellingBeeOpen && currentWord) {
+                const originalWord = initialWords.find(w => w.text.toUpperCase() === currentWord.text) || currentWord;
+                return <SpellingBee word={originalWord} studentName={student.name} onSuccess={handleSpellingComplete} onClose={() => handleSpellingComplete(false)} addToast={addToast} />
+            }
+
+            return (
+                <div className="fixed inset-0 z-40 flex flex-col md:flex-row p-4 gap-4 bg-slate-900/90 backdrop-blur-xl">
+                    <div style={{ position: 'fixed', left: '-9999px', top: 0 }}>
+                        {studentForCert && <Certificate ref={certificateRef} student={studentForCert} date={new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} />}
+                    </div>
+                    <aside className="z-10 w-full md:w-64 bg-slate-800/50 border border-slate-700 rounded-xl p-4 shadow-lg order-2 md:order-1 self-stretch md:self-auto">
+                        <h3 className="text-lg font-bold text-slate-300 mb-2">Player</h3>
+                        <div className="flex justify-between items-center p-2 rounded-lg bg-cyan-500 text-slate-900 font-bold">
+                            <span>{student.name}</span>
+                        </div>
+                    </aside>
+                    <main className="z-10 flex-1 flex flex-col items-center justify-center relative order-1 md:order-2 self-stretch min-h-0 py-4">
+                        <div className="absolute top-0 right-0 p-4 flex space-x-2 z-30">
+                            <button onClick={onClose} className="px-4 py-2 rounded-lg shadow font-bold transition bg-slate-700/50 hover:bg-slate-600/50 text-slate-200">Close</button>
+                        </div>
+                        
+                        {rouletteWords.length > 0 ? (
+                            <div className="relative flex items-center justify-center w-full flex-1 min-h-0">
+                                <div className="relative w-full h-full max-w-[90vmin] max-h-[90vmin] aspect-square">
+                                    <div style={{top: '50%', right: '0px', transform: 'translateY(-50%) rotate(180deg)'}} className="absolute w-0 h-0 border-t-[15px] border-t-transparent border-b-[15px] border-b-transparent border-l-[30px] border-l-yellow-400 z-20"></div>
+                                    <canvas ref={canvasRef} className="w-full h-full"></canvas>
+                                    <button onClick={spin} disabled={spinning} className="absolute inset-0 m-auto w-24 h-24 md:w-32 md:h-32 bg-white rounded-full shadow-2xl flex items-center justify-center text-xl md:text-2xl font-bold text-cyan-600 hover:scale-105 transition disabled:opacity-50 disabled:cursor-not-allowed">SPIN</button>
+                                </div>
+                            </div>
+                        ) : (
+                             <div className="flex-1 flex flex-col items-center justify-center w-full">
+                                <h2 className={`text-4xl font-bold mb-6 ${textColor}`}>Final Results</h2>
+                                <div className="w-full max-w-md bg-slate-800/50 border border-slate-700 rounded-xl p-4 space-y-3">
+                                    <div className="flex justify-between items-center bg-slate-700/50 p-3 rounded-lg">
+                                        <div>
+                                            <p className="font-bold text-lg text-slate-200">{student.name}</p>
+                                            <p className="text-sm text-slate-400">{student.correct} / {student.attempts} words</p>
+                                        </div>
+                                        <div className="flex items-center gap-4">
+                                            <p className="text-2xl font-bold text-cyan-400">{student.attempts > 0 ? ((student.correct / student.attempts) * 100).toFixed(0) : 0}%</p>
+                                            <button onClick={() => handleDownloadCertificate(student)} className="p-2 bg-slate-600 rounded-md hover:bg-cyan-500 hover:text-slate-900 transition">
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <button onClick={onClose} className="mt-8 px-6 py-3 bg-green-500 text-white font-bold rounded-lg shadow-lg">Finish</button>
+                            </div>
+                        )}
+                    </main>
+                </div>
+            );
+        };
+
+        const ToastNotification = React.memo(({ message, type, onClose }) => { 
+            const bgColor = { success: 'bg-green-500', error: 'bg-red-500', info: 'bg-blue-500' }[type]; 
+            useEffect(() => { 
+                const timer = setTimeout(onClose, 5000); 
+                return () => clearTimeout(timer); 
+            }, [onClose]); 
+            return (
+                <div className={`flex items-center text-white p-4 rounded-lg shadow-lg ${bgColor} animate-fade-in-down`}>
+                    <span className="flex-grow">{message}</span>
+                    <button onClick={onClose} className="ml-4 text-xl font-bold">&times;</button>
+                </div>
+            ); 
+        });
+        
+        const Card = React.memo(({ title, children, className = '' }) => (
+            <div className={`bg-slate-800/60 backdrop-blur-sm border border-slate-700 rounded-xl shadow-lg p-6 ${className}`}>
+                <h2 className="text-xl font-bold text-slate-300 mb-4 tracking-wide">{title}</h2>
+                {children}
+            </div>
+        ));
+
+        // --- Content from App.tsx ---
+        const App = () => {
+            const [words, setWords] = useState([]);
+            const [inputText, setInputText] = useState('');
+            const [studentName, setStudentName] = useState('');
+            const [isRouletteOpen, setIsRouletteOpen] = useState(false);
+            const [toasts, setToasts] = useState([]);
+            
+            const excelInputRef = useRef(null);
+            const docxInputRef = useRef(null);
+
+            const addToast = (message, type = 'info') => {
+                const newToast = { id: Date.now(), message, type };
+                setToasts(prev => [...prev, newToast]);
+                setTimeout(() => {
+                    setToasts(currentToasts => currentToasts.filter(t => t.id !== newToast.id));
+                }, 5000);
+            };
+            
+            const handleLoadExcel = async (event) => { 
+                const file = event.target.files?.[0]; 
+                if(file) { 
+                    try { 
+                        const wordList = await excelService.parseExcel(file); 
+                        setInputText(wordList.join('\n')); 
+                        addToast(`${wordList.length} words loaded from Excel.`, 'success'); 
+                    } catch (error) { 
+                        console.error("Error parsing Excel:", error); 
+                        addToast("Failed to parse Excel file.", "error"); 
+                    } finally {
+                        event.target.value = null;
+                    }
+                } 
+            };
+            
+            const handleLoadDocx = async (event) => {
+                const file = event.target.files?.[0];
+                if (file) {
+                    try {
+                        const reader = new FileReader();
+                        reader.onload = async (e) => {
+                            const arrayBuffer = e.target.result;
+                            const result = await mammoth.extractRawText({ arrayBuffer });
+                            const words = result.value.split('\n').map(w => w.trim()).filter(w => w);
+                            setInputText(words.join('\n'));
+                            addToast(`${words.length} words loaded from Word.`, 'success');
+                        };
+                        reader.readAsArrayBuffer(file);
+                    } catch (error) {
+                        console.error("Error parsing Word file:", error);
+                        addToast("Failed to parse Word file.", "error");
+                    } finally {
+                        event.target.value = null;
+                    }
+                }
+            };
+
+            const handlePlayRoulette = () => {
+                const parsedWords = inputText.split('\n')
+                    .map(line => line.trim())
+                    .filter(line => line.length > 0)
+                    .map((text, id) => ({ id, text }));
+                
+                if (parsedWords.length === 0) {
+                    addToast("Please add some words before playing.", "error");
+                    return;
+                }
+
+                setWords(parsedWords);
+                setIsRouletteOpen(true);
+            };
+
+            return (
+                <div className="min-h-screen p-4 sm:p-6 lg:p-8">
+                    <div className="fixed top-5 right-5 z-50 space-y-2">{toasts.map(toast => (<ToastNotification key={toast.id} {...toast} onClose={() => setToasts(ts => ts.filter(t => t.id !== toast.id))} />))}</div>
+                    {isRouletteOpen && <Roulette words={words} studentName={studentName} background={'#0F172A'} onClose={() => setIsRouletteOpen(false)} addToast={addToast} />}
+                    <header className="flex flex-col sm:flex-row items-center justify-center text-center mb-8">
+                        <h1 className="text-4xl md:text-5xl font-extrabold text-slate-100 tracking-wider">Spelling Bee Footprints</h1>
+                    </header>
+                    <main className="grid lg:grid-cols-3 gap-8 max-w-7xl mx-auto">
+                        <aside className="lg:sticky top-8 self-start space-y-6">
+                            <Card title="Student"><input type="text" value={studentName} onChange={e => setStudentName(e.target.value)} placeholder="Enter student's name..." className="w-full p-3 bg-slate-900/70 border-2 border-slate-700 rounded-md focus:ring-cyan-500 focus:border-cyan-500 text-slate-200" /></Card>
+                        </aside>
+                        <section className="lg:col-span-2 space-y-6">
+                            <Card title="Add Words">
+                                <div className="grid md:grid-cols-2 gap-6">
+                                    <textarea value={inputText} onChange={e => setInputText(e.target.value)} placeholder="Enter words, one per line..." className="w-full h-64 p-3 bg-slate-900/70 border-2 border-slate-700 rounded-md focus:ring-cyan-500 focus:border-cyan-500 text-slate-200"></textarea>
+                                    <div className="space-y-4">
+                                        <div className="text-center p-4 border-2 border-dashed border-slate-700 rounded-lg flex flex-col justify-center items-center h-full">
+                                            <p className="mb-2 text-slate-400">Load from file:</p>
+                                            <div className="flex gap-4">
+                                                <button onClick={() => excelInputRef.current?.click()} className="bg-green-600/80 hover:bg-green-500 text-white font-bold py-2 px-4 rounded-lg transition">Upload Excel</button>
+                                                <input type="file" accept=".xlsx" ref={excelInputRef} onChange={handleLoadExcel} className="hidden" />
+                                                <button onClick={() => docxInputRef.current?.click()} className="bg-blue-600/80 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded-lg transition">Upload Word</button>
+                                                <input type="file" accept=".docx" ref={docxInputRef} onChange={handleLoadDocx} className="hidden" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </Card>
+                            <div className="flex justify-center p-6">
+                                 <button 
+                                    onClick={handlePlayRoulette}
+                                    disabled={inputText.trim().length === 0}
+                                    className="bg-cyan-500 text-slate-900 font-bold py-3 px-8 text-xl rounded-lg transition transform hover:scale-105 shadow-lg disabled:bg-slate-600 disabled:text-slate-400 disabled:cursor-not-allowed disabled:hover:scale-100 animate-pulse-glow"
+                                 >
+                                    Play Roulette
+                                 </button>
+                            </div>
+                        </section>
+                    </main>
+                </div>
+            );
+        };
+
+        // --- Mount the App ---
+        const container = document.getElementById('root');
+        if (container) {
+            const root = createRoot(container);
+            root.render(<App />);
+        } else {
+            console.error("Root element not found");
+        }
+    </script>
+</body>
+</html>
+
