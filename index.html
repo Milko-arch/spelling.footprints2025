@@ -134,7 +134,7 @@
             const [isWordVisible, setIsWordVisible] = useState(false);
             const inputRefs = useRef([]);
             const speechRecognition = useRef(null);
-            const hasAttempted = useRef(false);
+            const attempts = useRef(1);
 
             useEffect(() => {
                 speak(word.text);
@@ -169,7 +169,7 @@
                     };
                     speechRecognition.current.onresult = (event) => { 
                         const transcript = event.results[0][0].transcript; 
-                        checkWord(transcript.replace(/\s+/g, '').toUpperCase()); 
+                        checkWord(transcript.replace(/[^a-zA-Z]/g, '').toUpperCase()); 
                     };
                     setMicStatus('ready');
                 } else {
@@ -183,11 +183,11 @@
                     setFeedback({ message: successMessage, type: 'success' });
                     speak(successMessage);
                     audioService.playApplause();
-                    setTimeout(() => onSuccess(!hasAttempted.current), 2500);
+                    setTimeout(() => onSuccess({ correct: true, attempts: attempts.current, wasShown: isWordVisible }), 2500);
                 } else {
                     const errorMessage = "Not quite! Try again.";
                     setFeedback({ message: errorMessage, type: 'error' });
-                    hasAttempted.current = true;
+                    attempts.current += 1;
                     setShake(true);
                     speak(errorMessage);
                     setTimeout(() => { setShake(false); setFeedback(null); }, 1500);
@@ -276,7 +276,7 @@
                         </div>
                         {feedback && (<p className={`text-2xl font-bold ${feedback.type === 'success' ? 'text-green-400' : 'text-red-400'}`}>{feedback.message}</p>)}
                         <div className="mt-8">
-                            <button onClick={() => onClose(false)} className="px-6 py-2 bg-slate-600 text-slate-200 font-semibold rounded-lg hover:bg-slate-500">Skip Word</button>
+                            <button onClick={() => onClose({ correct: false, attempts: attempts.current, wasShown: isWordVisible })} className="px-6 py-2 bg-slate-600 text-slate-200 font-semibold rounded-lg hover:bg-slate-500">Skip Word</button>
                         </div>
                     </div>
                 </div>
@@ -284,7 +284,20 @@
         };
 
         const Certificate = React.forwardRef(({ student, date }, ref) => {
-            const score = student.attempts > 0 ? ((student.correct / student.attempts) * 100).toFixed(0) : 0;
+            const score = student.totalAttempts > 0 ? ((student.totalWords / student.totalAttempts) * 100).toFixed(0) : 0;
+            let title, message;
+
+            if (score > 75) {
+                title = "Certificate of Distinction";
+                message = "For demonstrating exceptional skill, remarkable dedication, and outstanding performance in the Spelling Bee competition. Your commitment to excellence is truly inspiring.";
+            } else if (score >= 60) {
+                title = "Certificate of Achievement";
+                message = "For showcasing commendable skill and great potential in the Spelling Bee competition. With continued effort and practice, we are confident you will reach even greater heights.";
+            } else {
+                title = "Certificate of Participation";
+                message = "For your valuable participation and dedicated effort in the Spelling Bee competition. Every great journey begins with a single step, and we encourage you to continue practicing and building your skills for future success.";
+            }
+
             return (
                  <div ref={ref} className="w-[1100px] h-[850px] p-8 bg-[#fbfaf6] text-slate-800 flex flex-col items-center justify-center relative certificate-font overflow-hidden">
                     <div className="absolute inset-4 border-2 border-amber-600"></div>
@@ -292,14 +305,14 @@
                     <div className="absolute inset-8 border-1 border-amber-600"></div>
                     <div className="relative text-center w-full flex-grow flex flex-col justify-between py-8">
                         <div>
-                            <p className="text-2xl text-amber-700" style={{fontFamily: "'Merriweather', serif"}}>Certificate of Excellence</p>
+                            <p className="text-2xl text-amber-700" style={{fontFamily: "'Merriweather', serif"}}>{title}</p>
                             <h1 className="text-7xl font-bold text-blue-900 mt-2 tracking-wide" style={{fontFamily: "'Poppins', sans-serif"}}>Footprints Spelling 2025</h1>
                             <div className="w-64 h-0.5 bg-amber-500 mx-auto mt-6"></div>
                         </div>
                         <div>
                             <p className="text-xl text-slate-600 mb-4" style={{fontFamily: "'Merriweather', serif"}}>This certificate is proudly awarded to</p>
                             <h2 className="text-8xl font-normal text-blue-900" style={{fontFamily: "'Great Vibes', cursive"}}>{student.name}</h2>
-                            <p className="text-lg mt-8 max-w-2xl mx-auto text-slate-600" style={{fontFamily: "'Merriweather', serif"}}>For demonstrating exceptional skill and dedication in the Spelling Bee competition, achieving an outstanding score of:</p>
+                            <p className="text-lg mt-8 max-w-3xl mx-auto text-slate-600" style={{fontFamily: "'Merriweather', serif"}}>{message}</p>
                             <p className="text-7xl font-bold text-amber-700 my-4">{score}%</p>
                         </div>
                         <div className="w-full flex justify-between items-end px-16">
@@ -324,18 +337,128 @@
             );
         });
 
+        const StatisticsReport = React.forwardRef(({ stats, date }, ref) => {
+            const score = stats.totalAttempts > 0 ? ((stats.totalWords / stats.totalAttempts) * 100).toFixed(0) : 0;
+            const practiceWords = stats.wordHistory.filter(w => !w.correct || w.attempts > 1);
+            const revealedWords = stats.wordHistory.filter(w => w.wasShown);
+            
+            let recommendation;
+            if (score > 90) {
+                recommendation = "Excellent work! To challenge yourself further, try learning the definitions and origins (etymology) of the words you spelled correctly. Understanding a word's history can make it unforgettable.";
+            } else if (revealedWords.length > stats.totalWords / 2) {
+                recommendation = "Focus on building confidence. Try spelling the word out loud first before typing, trusting your initial instinct. You know more than you think!";
+            } else if (practiceWords.length > stats.totalWords / 3) {
+                 recommendation = "Great persistence! To improve accuracy, try the 'look, say, cover, write, check' method for difficult words. Repetition and reviewing challenging words is key to mastery.";
+            } else {
+                recommendation = "You have a strong foundation and a brave approach! Let's focus on expanding vocabulary. Reading more books and articles is a great way to discover new words and their patterns.";
+            }
+            
+            return (
+                 <div ref={ref} className="w-[1100px] h-[850px] p-12 bg-white text-slate-900 flex flex-col certificate-font">
+                     <div className="text-center border-b-2 border-slate-300 pb-4">
+                        <h1 className="text-4xl font-bold text-blue-900" style={{fontFamily: "'Poppins', sans-serif"}}>Spelling Performance Report</h1>
+                        <p className="text-xl text-slate-600">{stats.name}</p>
+                        <p className="text-md text-slate-500">{date}</p>
+                     </div>
+                     <div className="flex-grow grid grid-cols-2 gap-8 py-8">
+                        <div>
+                             <h2 className="text-2xl font-bold text-blue-800 mb-4 border-b border-slate-200 pb-2">Summary</h2>
+                             <div className="space-y-3 text-lg">
+                                <div className="flex justify-between"><span>Total Words:</span> <span className="font-bold">{stats.totalWords}</span></div>
+                                <div className="flex justify-between"><span>Total Attempts:</span> <span className="font-bold">{stats.totalAttempts}</span></div>
+                                <div className="flex justify-between"><span>Efficiency Score:</span> <span className="font-bold text-2xl text-blue-800">{score}%</span></div>
+                             </div>
+                             <h2 className="text-2xl font-bold text-blue-800 mt-8 mb-4 border-b border-slate-200 pb-2">Pedagogical Recommendation</h2>
+                             <p className="text-slate-700 italic">{recommendation}</p>
+                        </div>
+                        <div className="flex flex-col">
+                            <h2 className="text-2xl font-bold text-blue-800 mb-4 border-b border-slate-200 pb-2">Analysis</h2>
+                            <div className="flex-1 space-y-4 overflow-y-auto">
+                                <div>
+                                    <h3 className="text-lg font-semibold text-slate-700 mb-2">Words for Practice ({practiceWords.length})</h3>
+                                    {practiceWords.length > 0 ? (
+                                        <ul className="list-disc list-inside text-slate-600">
+                                            {practiceWords.map((w,i) => <li key={i}>{w.text} ({w.attempts} attempts)</li>)}
+                                        </ul>
+                                    ) : <p className="text-slate-500">None!</p>}
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-semibold text-slate-700 mb-2">Revealed Words ({revealedWords.length})</h3>
+                                    {revealedWords.length > 0 ? (
+                                        <ul className="list-disc list-inside text-slate-600">
+                                            {revealedWords.map((w,i) => <li key={i}>{w.text}</li>)}
+                                        </ul>
+                                    ) : <p className="text-slate-500">None!</p>}
+                                </div>
+                            </div>
+                        </div>
+                     </div>
+                </div>
+            );
+        });
+
+        const StatisticsModal = ({ stats, onClose, onDownload }) => {
+            if (!stats) return null;
+            
+            const practiceWords = stats.wordHistory.filter(w => !w.correct || w.attempts > 1);
+            const revealedWords = stats.wordHistory.filter(w => w.wasShown);
+
+            return (
+                <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+                    <div className="bg-slate-800/70 border border-slate-700 rounded-2xl p-8 w-full max-w-3xl text-center relative flex flex-col">
+                        <button onClick={onClose} className="absolute top-4 right-4 p-2 rounded-full bg-slate-700 hover:bg-slate-600 transition">
+                             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                        </button>
+                        <h2 className="text-3xl font-bold mb-6 text-slate-200">Session Statistics for {stats.name}</h2>
+                        <div className="grid md:grid-cols-2 gap-6 text-left flex-grow">
+                             <div>
+                                <h3 className="text-xl font-semibold text-cyan-400 mb-3">Words for Practice</h3>
+                                <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
+                                    {practiceWords.length > 0 ? practiceWords.map((word, i) => (
+                                        <div key={i} className="bg-slate-700/50 p-3 rounded-lg flex justify-between">
+                                            <span className="text-slate-300">{word.text}</span>
+                                            <span className="font-mono text-amber-400">{word.attempts} attempts</span>
+                                        </div>
+                                    )) : <p className="text-slate-400">Great job! No words needed extra practice.</p>}
+                                </div>
+                            </div>
+                             <div>
+                                <h3 className="text-xl font-semibold text-cyan-400 mb-3">Revealed Words</h3>
+                                <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
+                                    {revealedWords.length > 0 ? revealedWords.map((word, i) => (
+                                        <div key={i} className="bg-slate-700/50 p-3 rounded-lg flex justify-between">
+                                            <span className="text-slate-300">{word.text}</span>
+                                        </div>
+                                    )) : <p className="text-slate-400">No words were revealed during this session.</p>}
+                                </div>
+                            </div>
+                        </div>
+                         <div className="mt-8 flex justify-center">
+                            <button onClick={() => onDownload(stats, 'report')} className="px-6 py-3 bg-indigo-500 text-white font-bold rounded-lg shadow-lg flex items-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+                                Download Report
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         // --- Content from Roulette.tsx ---
-        const Roulette = ({ words: initialWords, studentName, background, onClose, addToast }) => {
+        const Roulette = ({ words: initialWords, studentName, background, onClose, addToast, onGameEnd }) => {
             const canvasRef = useRef(null);
             const certificateRef = useRef(null);
+            const reportRef = useRef(null);
             const [spinning, setSpinning] = useState(false);
             const [currentWord, setCurrentWord] = useState(null);
             const [isSpellingBeeOpen, setIsSpellingBeeOpen] = useState(false);
             const [rouletteWords, setRouletteWords] = useState([...initialWords.map(w => ({...w, text: w.text.toUpperCase()}))]);
-            const [student, setStudent] = useState({ name: studentName || 'Participant', attempts: 0, correct: 0 });
+            const [student, setStudent] = useState({ name: studentName || 'Participant', wordHistory: [] });
             const spinSoundRef = useRef(null);
             const [isNextSpinQueued, setIsNextSpinQueued] = useState(false);
-            const [studentForCert, setStudentForCert] = useState(null);
+            const [renderData, setRenderData] = useState(null);
+            const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
+            const [finalStats, setFinalStats] = useState(null);
 
             const speak = useCallback((text) => {
                 window.speechSynthesis.cancel();
@@ -395,7 +518,6 @@
             const spin = useCallback(() => {
                 if (spinning || rouletteWords.length === 0) return;
                 setSpinning(true);
-                setStudent(s => ({ ...s, attempts: s.attempts + 1 }));
                 
                 const spinDuration = 8000;
                 const winningSegmentIndex = Math.floor(Math.random() * rouletteWords.length);
@@ -452,12 +574,24 @@
                     return () => clearTimeout(timer);
                 }
             }, [isNextSpinQueued, spin, rouletteWords.length]);
-            
-            const handleSpellingComplete = (isCorrectFirstTry) => {
-                setIsSpellingBeeOpen(false);
-                if(isCorrectFirstTry) {
-                    setStudent(s => ({ ...s, correct: s.correct + 1 }));
+
+            useEffect(() => {
+                if(rouletteWords.length === 0 && initialWords.length > 0){
+                    const totalAttempts = student.wordHistory.reduce((sum, word) => sum + word.attempts, 0);
+                    const totalCorrect = student.wordHistory.filter(w => w.correct).length;
+                    const totalWords = initialWords.length;
+                    const stats = {...student, totalAttempts, totalCorrect, totalWords };
+                    setFinalStats(stats);
+                    if (onGameEnd) {
+                        onGameEnd(stats);
+                    }
                 }
+            }, [rouletteWords.length, student, onGameEnd, initialWords.length]);
+            
+            const handleSpellingComplete = (result) => {
+                setIsSpellingBeeOpen(false);
+                setStudent(prev => ({ ...prev, wordHistory: [...prev.wordHistory, { text: currentWord.text, ...result }] }));
+
                 if (currentWord) {
                     const nextWords = rouletteWords.filter(w => w.text !== currentWord.text);
                     setRouletteWords(nextWords);
@@ -467,20 +601,22 @@
                 }
             };
             
-            const handleDownloadCertificate = async (student) => {
-                setStudentForCert(student);
+            const handleDownloadPDF = async (studentData, type) => {
+                setRenderData({ data: studentData, type });
                 await new Promise(resolve => setTimeout(resolve, 100));
                 
                 const { jsPDF } = window.jspdf;
-                const element = certificateRef.current;
+                const element = type === 'certificate' ? certificateRef.current : reportRef.current;
+                const filename = type === 'certificate' ? `Certificate-${studentData.name.replace(/ /g, '_')}.pdf` : `Report-${studentData.name.replace(/ /g, '_')}.pdf`;
+                
                 if(element) {
                     const canvas = await html2canvas(element, { scale: 2 });
                     const imgData = canvas.toDataURL('image/png');
                     const pdf = new jsPDF({ orientation: 'landscape', unit: 'px', format: [1100, 850] });
                     pdf.addImage(imgData, 'PNG', 0, 0, 1100, 850);
-                    pdf.save(`Certificate-${student.name.replace(/ /g, '_')}.pdf`);
+                    pdf.save(filename);
                 }
-                setStudentForCert(null);
+                setRenderData(null);
             };
             
             const isImageBg = typeof background === 'string' && background.startsWith('data:image');
@@ -488,14 +624,16 @@
 
             if (isSpellingBeeOpen && currentWord) {
                 const originalWord = initialWords.find(w => w.text.toUpperCase() === currentWord.text) || currentWord;
-                return <SpellingBee word={originalWord} studentName={student.name} onSuccess={handleSpellingComplete} onClose={() => handleSpellingComplete(false)} addToast={addToast} speak={speak} />
+                return <SpellingBee word={originalWord} studentName={student.name} onSuccess={handleSpellingComplete} onClose={() => handleSpellingComplete({ correct: false, attempts: 1, wasShown: false })} addToast={addToast} speak={speak} />
             }
 
             return (
                 <div className="fixed inset-0 z-40 flex flex-col md:flex-row p-4 gap-4 bg-slate-900/90 backdrop-blur-xl">
                     <div style={{ position: 'fixed', left: '-9999px', top: 0 }}>
-                        {studentForCert && <Certificate ref={certificateRef} student={studentForCert} date={new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} />}
+                        {renderData?.type === 'certificate' && <Certificate ref={certificateRef} student={renderData.data} date={new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} />}
+                        {renderData?.type === 'report' && <StatisticsReport ref={reportRef} stats={renderData.data} date={new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} />}
                     </div>
+                    {isStatsModalOpen && finalStats && <StatisticsModal stats={finalStats} onClose={() => setIsStatsModalOpen(false)} onDownload={handleDownloadPDF} />}
                     <aside className="z-10 w-full md:w-64 bg-slate-800/50 border border-slate-700 rounded-xl p-4 shadow-lg order-2 md:order-1 self-stretch md:self-auto">
                         <h3 className="text-lg font-bold text-slate-300 mb-2">Player</h3>
                         <div className="flex justify-between items-center p-2 rounded-lg bg-cyan-500 text-slate-900 font-bold">
@@ -516,23 +654,24 @@
                                 </div>
                             </div>
                         ) : (
-                             <div className="flex-1 flex flex-col items-center justify-center w-full">
+                             finalStats && <div className="flex-1 flex flex-col items-center justify-center w-full">
                                 <h2 className={`text-4xl font-bold mb-6 ${textColor}`}>Final Results</h2>
                                 <div className="w-full max-w-md bg-slate-800/50 border border-slate-700 rounded-xl p-4 space-y-3">
                                     <div className="flex justify-between items-center bg-slate-700/50 p-3 rounded-lg">
                                         <div>
-                                            <p className="font-bold text-lg text-slate-200">{student.name}</p>
-                                            <p className="text-sm text-slate-400">{student.correct} / {student.attempts} words</p>
+                                            <p className="font-bold text-lg text-slate-200">{finalStats.name}</p>
+                                            <p className="text-sm text-slate-400">{finalStats.totalCorrect} / {finalStats.totalWords} words</p>
                                         </div>
                                         <div className="flex items-center gap-4">
-                                            <p className="text-2xl font-bold text-cyan-400">{student.attempts > 0 ? ((student.correct / student.attempts) * 100).toFixed(0) : 0}%</p>
-                                            <button onClick={() => handleDownloadCertificate(student)} className="p-2 bg-slate-600 rounded-md hover:bg-cyan-500 hover:text-slate-900 transition">
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
-                                            </button>
+                                            <p className="text-2xl font-bold text-cyan-400">{finalStats.totalAttempts > 0 ? ((finalStats.totalWords / finalStats.totalAttempts) * 100).toFixed(0) : 0}%</p>
                                         </div>
                                     </div>
                                 </div>
-                                <button onClick={onClose} className="mt-8 px-6 py-3 bg-green-500 text-white font-bold rounded-lg shadow-lg">Finish</button>
+                                <div className="mt-8 flex gap-4">
+                                     <button onClick={() => handleDownloadPDF(finalStats, 'certificate')} className="px-6 py-3 bg-amber-500 text-white font-bold rounded-lg shadow-lg">Download Certificate</button>
+                                     <button onClick={() => setIsStatsModalOpen(true)} className="px-6 py-3 bg-indigo-500 text-white font-bold rounded-lg shadow-lg">View Statistics</button>
+                                     <button onClick={onClose} className="px-6 py-3 bg-green-500 text-white font-bold rounded-lg shadow-lg">Finish</button>
+                                </div>
                             </div>
                         )}
                     </main>
@@ -628,15 +767,18 @@
                     addToast("Please add some words before playing.", "error");
                     return;
                 }
-
                 setWords(parsedWords);
                 setIsRouletteOpen(true);
+            };
+            
+            const handleGameEnd = (stats) => {
+                 //This is no longer needed in App as stats are handled within Roulette
             };
 
             return (
                 <div className="min-h-screen p-4 sm:p-6 lg:p-8">
                     <div className="fixed top-5 right-5 z-50 space-y-2">{toasts.map(toast => (<ToastNotification key={toast.id} {...toast} onClose={() => setToasts(ts => ts.filter(t => t.id !== toast.id))} />))}</div>
-                    {isRouletteOpen && <Roulette words={words} studentName={studentName} background={'#0F172A'} onClose={() => setIsRouletteOpen(false)} addToast={addToast} />}
+                    {isRouletteOpen && <Roulette words={words} studentName={studentName} background={'#0F172A'} onClose={() => setIsRouletteOpen(false)} addToast={addToast} onGameEnd={handleGameEnd} />}
                     <header className="flex flex-col sm:flex-row items-center justify-center text-center mb-8">
                         <h1 className="text-4xl md:text-5xl font-extrabold text-slate-100 tracking-wider">Spelling Bee Footprints</h1>
                     </header>
