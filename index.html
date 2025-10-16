@@ -432,6 +432,11 @@
             
             const practiceWords = stats.wordHistory.filter(w => !w.correct || w.attempts > 1);
             const revealedWords = stats.wordHistory.filter(w => w.wasShown);
+            const allPracticeWords = [...new Set([...practiceWords.map(w=>w.text), ...revealedWords.map(w=>w.text)])].map(text => {
+                const practiceInfo = practiceWords.find(p => p.text === text);
+                return { text, attempts: practiceInfo?.attempts || 1};
+            });
+
 
             return (
                 <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
@@ -444,22 +449,22 @@
                              <div>
                                 <div className="flex justify-between items-center mb-3">
                                     <h3 className="text-xl font-semibold text-cyan-400">Words for Practice</h3>
-                                    {practiceWords.length > 0 && (
+                                    {allPracticeWords.length > 0 && (
                                         <div className="flex gap-2">
-                                            <button onClick={() => onDownloadPracticeWords(practiceWords, 'word')} title="Download as Word" className="p-2 bg-blue-600/80 rounded-md hover:bg-blue-500 transition">
+                                            <button onClick={() => onDownloadPracticeWords(allPracticeWords, 'word')} title="Download as Word" className="p-2 bg-blue-600/80 rounded-md hover:bg-blue-500 transition">
                                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
                                             </button>
-                                            <button onClick={() => onDownloadPracticeWords(practiceWords, 'excel')} title="Download as Excel" className="p-2 bg-green-600/80 rounded-md hover:bg-green-500 transition">
+                                            <button onClick={() => onDownloadPracticeWords(allPracticeWords, 'excel')} title="Download as Excel" className="p-2 bg-green-600/80 rounded-md hover:bg-green-500 transition">
                                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
                                             </button>
                                         </div>
                                     )}
                                 </div>
                                 <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
-                                    {practiceWords.length > 0 ? practiceWords.map((word, i) => (
+                                    {allPracticeWords.length > 0 ? allPracticeWords.map((word, i) => (
                                         <div key={i} className="bg-slate-700/50 p-3 rounded-lg flex justify-between">
                                             <span className="text-slate-300">{word.text}</span>
-                                            <span className="font-mono text-amber-400">{word.attempts} attempts</span>
+                                            <span className="font-mono text-amber-400">{word.attempts > 1 ? `${word.attempts} attempts` : (revealedWords.some(r => r.text === word.text) ? 'Revealed' : '')}</span>
                                         </div>
                                     )) : <p className="text-slate-400">Great job! No words needed extra practice.</p>}
                                 </div>
@@ -513,7 +518,7 @@
                     const finalVoice = googleUSEnglish || googleVoice || defaultBrowserVoice || voices[0];
                     if (finalVoice) utterance.voice = finalVoice;
                 }
-                utterance.rate = 0.8;
+                utterance.rate = 0.7;
                 utterance.pitch = 1;
                 window.speechSynthesis.speak(utterance);
             }, []);
