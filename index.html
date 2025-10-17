@@ -506,21 +506,42 @@
             const [renderData, setRenderData] = useState(null);
             const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
             const [finalStats, setFinalStats] = useState(null);
+            const [speak, setSpeak] = useState(() => () => {});
 
-            const speak = useCallback((text) => {
-                window.speechSynthesis.cancel();
-                const utterance = new SpeechSynthesisUtterance(text);
-                const voices = window.speechSynthesis.getVoices().filter(v => v.lang.startsWith('en-'));
-                if (voices.length > 0) {
-                    const googleUSEnglish = voices.find(v => v.name === 'Google US English');
-                    const googleVoice = voices.find(v => v.name.includes('Google'));
-                    const defaultBrowserVoice = voices.find(v => v.default);
-                    const finalVoice = googleUSEnglish || googleVoice || defaultBrowserVoice || voices[0];
-                    if (finalVoice) utterance.voice = finalVoice;
+            useEffect(() => {
+                const initVoice = () => {
+                    const voices = window.speechSynthesis.getVoices().filter(v => v.lang.startsWith('en-'));
+                     if (voices.length > 0) {
+                        const googleUSEnglish = voices.find(v => v.name === 'Google US English');
+                        const googleVoice = voices.find(v => v.name.includes('Google'));
+                        const defaultBrowserVoice = voices.find(v => v.default);
+                        const finalVoice = googleUSEnglish || googleVoice || defaultBrowserVoice || voices[0];
+                        
+                        const speakFunc = (text) => {
+                            window.speechSynthesis.cancel();
+                            const utterance = new SpeechSynthesisUtterance(text);
+                            if (finalVoice) utterance.voice = finalVoice;
+                            utterance.lang = 'en-US';
+                            utterance.rate = 0.7;
+                            utterance.pitch = 1;
+                            window.speechSynthesis.speak(utterance);
+                        };
+                        setSpeak(() => speakFunc);
+
+                        // Warm-up call
+                        const warmUpUtterance = new SpeechSynthesisUtterance('');
+                        warmUpUtterance.volume = 0;
+                        window.speechSynthesis.speak(warmUpUtterance);
+                    }
+                };
+
+                if (window.speechSynthesis.getVoices().length > 0) {
+                    initVoice();
+                } else if (window.speechSynthesis.onvoiceschanged !== undefined) {
+                    window.speechSynthesis.onvoiceschanged = initVoice;
+                } else {
+                    setTimeout(initVoice, 500);
                 }
-                utterance.rate = 0.7;
-                utterance.pitch = 1;
-                window.speechSynthesis.speak(utterance);
             }, []);
 
             const drawRoulette = useCallback(() => {
@@ -851,10 +872,10 @@
 
             return (
                 <div className="min-h-screen p-4 sm:p-6 lg:p-8">
-                    <div className="fixed top-5 right-5 z-50 space-y-2">{toasts.map(toast => (<ToastNotification key={toast.id} {...toast} onClose={() => setToasts(ts => ts.filter(t => t.id !== toast.id))} />))}</div>
+                    <div className="fixed top-5 right-5 z-50 space-y-2">{toasts.map(toast => (<ToastNotification key={toast.id} {...toast} onClose={() => setToasts(ts => ts.filter(t => t.id !== newToast.id))} />))}</div>
                     {isRouletteOpen && <Roulette words={words} studentName={studentName} background={'#0F172A'} onClose={() => setIsRouletteOpen(false)} addToast={addToast} onGameEnd={handleGameEnd} />}
                     <header className="flex flex-col sm:flex-row items-center justify-center text-center mb-8">
-                        <h1 className="text-4xl md:text-5xl font-extrabold text-slate-100 tracking-wider">Spelling Bee Footprints</h1>
+                        <h1 className="text-4xl md:text-5xl font-extrabold text-amber-400 tracking-wider">Spelling Bee Footprints</h1>
                     </header>
                     <main className="grid lg:grid-cols-3 gap-8 max-w-7xl mx-auto">
                         <aside className="lg:sticky top-8 self-start space-y-6">
@@ -903,4 +924,6 @@
     </script>
 </body>
 </html>
+
+
 
