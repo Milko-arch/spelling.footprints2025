@@ -448,7 +448,7 @@
                         <div className="grid md:grid-cols-2 gap-6 text-left flex-grow">
                              <div>
                                 <div className="flex justify-between items-center mb-3">
-                                    <h3 className="text-xl font-semibold text-cyan-400">Words to Review</h3>
+                                    <h3 className="text-xl font-semibold text-cyan-400">Words for Practice</h3>
                                     {allPracticeWords.length > 0 && (
                                         <div className="flex gap-2">
                                             <button onClick={() => onDownloadPracticeWords(allPracticeWords, 'word')} title="Download as Word" className="p-2 bg-blue-600/80 rounded-md hover:bg-blue-500 transition">
@@ -466,20 +466,24 @@
                                             <span className="text-slate-300">{word.text}</span>
                                             <span className="font-mono text-amber-400">{word.attempts > 1 ? `${word.attempts} attempts` : (revealedWords.some(r => r.text === word.text) ? 'Revealed' : '')}</span>
                                         </div>
-                                    )) : <p className="text-slate-400 text-center">Great job! No words needed extra practice.</p>}
+                                    )) : <p className="text-slate-400">Great job! No words needed extra practice.</p>}
                                 </div>
                             </div>
                              <div>
-                                <h3 className="text-xl font-semibold text-cyan-400 mb-3">Pedagogical Recommendation</h3>
-                                <div className="space-y-2 max-h-60 overflow-y-auto pr-2 text-slate-400 italic">
-                                    <p>{stats.recommendation}</p>
+                                <h3 className="text-xl font-semibold text-cyan-400 mb-3">Revealed Words</h3>
+                                <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
+                                    {revealedWords.length > 0 ? revealedWords.map((word, i) => (
+                                        <div key={i} className="bg-slate-700/50 p-3 rounded-lg flex justify-between">
+                                            <span className="text-slate-300">{word.text}</span>
+                                        </div>
+                                    )) : <p className="text-slate-400">No words were revealed during this session.</p>}
                                 </div>
                             </div>
                         </div>
                          <div className="mt-8 flex justify-center">
                             <button onClick={() => onDownload(stats, 'report')} className="px-6 py-3 bg-indigo-500 text-white font-bold rounded-lg shadow-lg flex items-center gap-2">
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
-                                Download Full Report
+                                Download Report
                             </button>
                         </div>
                     </div>
@@ -847,10 +851,10 @@
 
             return (
                 <div className="min-h-screen p-4 sm:p-6 lg:p-8">
-                    <div className="fixed top-5 right-5 z-50 space-y-2">{toasts.map(toast => (<ToastNotification key={toast.id} {...toast} onClose={() => setToasts(ts => ts.filter(t => t.id !== newToast.id))} />))}</div>
+                    <div className="fixed top-5 right-5 z-50 space-y-2">{toasts.map(toast => (<ToastNotification key={toast.id} {...toast} onClose={() => setToasts(ts => ts.filter(t => t.id !== toast.id))} />))}</div>
                     {isRouletteOpen && <Roulette words={words} studentName={studentName} background={'#0F172A'} onClose={() => setIsRouletteOpen(false)} addToast={addToast} onGameEnd={handleGameEnd} />}
                     <header className="flex flex-col sm:flex-row items-center justify-center text-center mb-8">
-                        <h1 className="text-4xl md:text-5xl font-extrabold text-orange-500 tracking-wider">Spelling Bee Footprints</h1>
+                        <h1 className="text-4xl md:text-5xl font-extrabold text-slate-100 tracking-wider">Spelling Bee Footprints</h1>
                     </header>
                     <main className="grid lg:grid-cols-3 gap-8 max-w-7xl mx-auto">
                         <aside className="lg:sticky top-8 self-start space-y-6">
